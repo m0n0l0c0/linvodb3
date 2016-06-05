@@ -100,7 +100,8 @@ describe('Schema', function () {
         address: { city: { index: true } },
         other: true,
         active: Boolean, // test the new syntax
-        started: Date
+        started: Date,
+        email: RegExp
       }, { filename: testDb });
 
       var doc = new d({ name: "Kelly", age: 27, department: "support", address: { city: "Scranon" } });
@@ -138,6 +139,12 @@ describe('Schema', function () {
       doc.started = new Date("2014-11-29").getTime();
       doc.started.getTime().should.equal(new Date("2014-11-29").getTime());
 
+      // RegExpressions
+      doc.email = /^Test Regex$/i
+      String(doc.email).should.equal(String(/^Test Regex$/i));
+
+      doc.email = new RegExp("^Test Regex$","i");
+      String(doc.email).should.equal(String(new RegExp("^Test Regex$","i")));
 
       done();
     });
@@ -494,7 +501,157 @@ describe('Schema', function () {
     });
   }); // End of Model Instance
 
-  
+
+  describe('Model instance - RegExp', function() {
+    // TODO: also check dot notation for indexes on this test
+    beforeEach(function (done) {
+      d = new Model("testDb", { 
+        name: { index: true, unique: true, sparse: true },
+        age: { index: true },
+        department: { index: false },
+        email: { index: true },
+      }, { filename: testDb });
+
+      d.insert([
+        { age: 27, name: "Kelly", department: "support" },
+        { age: 31, name: "Jim", department: "sales" },
+        { age: 33, name: "Dwight", department: "sales", "email": /^RegExpEmailTest$/i }, 
+        { age: 45, name: "Michael", department: "management" },
+        { age: 23, name: "Ryan", department: "sales" },
+
+      ], function (err) {
+        done();
+      });
+    });
+
+    it("model instance construct", function(done) {
+      var doc = new d({ name: "andy", age: 11 });
+      (doc instanceof d).should.equal(true);
+      
+      var doc1 = new d(doc);
+      (doc1 instanceof d).should.equal(true);
+
+      done();
+    });
+
+    it("model instance .save - update object", function(done) {
+      d.findOne({ name: "Dwight"}, function(err, doc) {
+        doc.constructor.name.should.equal("Document");
+
+        assert.isDefined(doc);
+        doc.email.toString().should.equal("/^RegExpEmailTest$/i");
+
+        doc.email = /^(.*) Dwaine is my name (.*)$/i;
+        doc.save(function(err, doc1) {
+          assert.isNull(err);
+          util.isRegExp(doc1.email).should.equal(true);
+          doc1.email.toString().should.equal("/^(.*) Dwaine is my name (.*)$/i");
+
+          d.findOne({ _id: doc1._id }, function(err, doc2) {
+            assert.isNull(err);
+            util.isRegExp(doc2.email).should.equal(true);
+            doc2.email.toString().should.equal(doc1.email.toString());
+            done();
+          });
+
+        });
+      });
+    });
+
+    it("model instance .save - new object", function(done) {
+      var doc = new d({ name: "Big Tuna", age: 10, department: "sales", "email": /^(.*) Big Tuna is my name (.*)$/i});
+      doc.save(function(err, doc1) {
+        assert.isNull(err);
+        assert.isDefined(doc1);
+
+        d.findOne({ _id: doc1._id }, function(err, doc2) {
+          assert.isNull(err);
+          doc2.email.toString().should.equal(doc1.email.toString());
+          done();
+        });
+      });
+
+    });
+
+    it("model instance has a working .remove", function(done) {
+      d.findOne({ email: /^RegExpEmailTest$/i }, function(err,doc) {
+        assert.isNull(err);
+        assert.isNotNull(doc);
+
+        doc.remove(function(err) {
+          assert.isNull(err);
+          d.findOne({ _id: doc._id }, function(err, doc1) {
+            assert.isNull(err);
+            assert.isNull(doc1);
+
+            done();
+          });
+        })
+      });
+    });
+
+    it.skip("model instance has a working .update", function(done) {
+      d.findOne({ name: "Dwight" }, function(err,doc) {
+        assert.isNull(err);
+        assert.isDefined(doc);
+
+        doc.update({ $inc: { age: 1 } }, function(err, c, doc1) {
+          assert.isNull(err);
+          (doc1.age == doc.age+1).should.equal(true);
+          done();
+        })
+      });
+    });
+
+    it.skip("Model.find returns model instance", function(done) {
+      d.findOne({}, function(err, doc) {
+        doc.constructor.name.should.equal("Document");
+        done();
+      });
+    });
+
+    it.skip("Model.update returns model instance", function(done) {
+      d.update({}, { $inc: { age: 1 } }, function(err, n, doc) {
+        doc.constructor.name.should.equal("Document");
+        done();
+      });
+    });
+
+    it.skip("Model.insert returns model instance", function(done) {
+      d.insert({ name: "New guy" }, function(err, doc) {
+        doc.constructor.name.should.equal("Document");
+        done();
+      });
+    });
+
+
+    it.skip("define instance method", function(done) {
+      d.method("findSameDepartment", function(cb) {
+        return d.find({ department: this.department }, cb);
+      });
+
+      d.findOne({name: "Jim"},function(err, jim) {
+        jim.findSameDepartment(function(err, res) {
+          assert.isNull(err);
+          res.length.should.equal(3);
+          done();
+        });
+      });
+    });    
+
+    it.skip("define static method", function(done) {
+      d.static("findSales", function(cb) {
+        return this.find({ department: "sales" }, cb);
+      });
+      d.findSales(function(err, sales) {
+        assert.isNull(err);
+        sales.length.should.equal(3);
+        done();
+      })
+    });
+  }); // End of Model Instance
+
+
   // TODO: move this to db.test.js
   describe('Events', function() {
     it("use pre-action events to set _ctime and _mtime & test remove", function(done) {
