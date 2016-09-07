@@ -1,6 +1,6 @@
 var async = require("async"),
     fs = require("fs"),
-    _ = require("lodash");
+    _ = require("underscore");
 
 module.exports = function setupSync(model, api, options)
 {
@@ -39,6 +39,8 @@ module.exports = function setupSync(model, api, options)
         var remote = {}, push = [], pull = [];
 
         var uid = api.user._id, checkUid = function() { return (api.user && api.user._id) == uid };
+
+        status("sync started for "+model.modelName);
 
         async.auto({
             ensure_indexes: function(callback) { // Meaningless lookup to Ensure the DB has been indexed
@@ -106,6 +108,8 @@ module.exports = function setupSync(model, api, options)
                 if (! checkUid()) return callback(new Error("uid changed while syncing"));
 
                 if (! pull.length) return callback();
+
+                if (options.limitPerSync) pull = pull.slice(0, options.limitPerSync);
                 
                 api.request("datastoreGet", _.extend({ }, baseQuery, { ids: pull }), function(err, results)
                 {
@@ -113,10 +117,14 @@ module.exports = function setupSync(model, api, options)
 
                     if (results.length) status("pulled "+results.length+" down for "+model.modelName);
 
-                    results.forEach(function(x) {
+                    var byId = { };
+                    results = results.map(function(x) {
+                        if (byId[x._id]) return;
+                        byId[x._id] = true;
                         x._ctime = new Date(x._ctime || 0);
                         x._mtime = new Date(x._mtime || 0);
-                    });
+                        return x;
+                    }).filter(function(x) { return x });
    
                     if (! checkUid()) return callback(new Error("uid changed while syncing"));
 
